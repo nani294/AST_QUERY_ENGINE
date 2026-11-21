@@ -1,0 +1,3 @@
+# Calls commonly flagged by security scanners
+Call(func.name == "eval" OR func.name == "exec" OR func.qualname == "os.system"
+     OR func.qualname == "pickle.loads" OR func.qualname == "subprocess.call")

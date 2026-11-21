@@ -1,0 +1,2 @@
+# open() called inside a for/while loop
+Call(func.name == "open") AND ancestor(For OR While)

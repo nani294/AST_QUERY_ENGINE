@@ -1,0 +1,2 @@
+# Functions containing both a for and a while loop
+FunctionDef AND descendant(For) AND descendant(While)

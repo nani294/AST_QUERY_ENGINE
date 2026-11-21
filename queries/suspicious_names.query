@@ -1,0 +1,2 @@
+# Variables with secret-looking names
+Name(id == "password") OR Name(id == "passwd") OR Name(id == "secret") OR Name(id == "api_key")

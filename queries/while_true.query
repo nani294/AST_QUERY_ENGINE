@@ -1,0 +1,2 @@
+# Infinite-loop idiom: while True
+While(test.value == True)

@@ -1,0 +1,2 @@
+# open() calls that are NOT inside a with block
+Call(func.name == "open") AND NOT ancestor(With)

@@ -1,0 +1,2 @@
+# Every call, binding the called name to $X
+Call(func.name == $X)

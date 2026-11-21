@@ -1,0 +1,2 @@
+# Any loop (for or while) that contains another loop
+(For OR While) AND descendant(For OR While)

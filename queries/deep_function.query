@@ -1,0 +1,2 @@
+# Functions whose control flow nests 4 or more levels deep
+FunctionDef(max_nesting >= 4)

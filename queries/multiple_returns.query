@@ -1,0 +1,2 @@
+# Functions with more than one return statement
+FunctionDef(num_returns > 1)

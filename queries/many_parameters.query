@@ -1,0 +1,2 @@
+# Functions with more than 5 parameters
+FunctionDef(num_params > 5)

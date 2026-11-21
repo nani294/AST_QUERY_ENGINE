@@ -1,0 +1,2 @@
+# An if nested inside two other ifs (elif chains do not count as nesting)
+If(is_elif == False) AND ancestor(If(is_elif == False) AND ancestor(If(is_elif == False)))

@@ -1,0 +1,2 @@
+# Functions with more than 20 statements (counting nested ones)
+FunctionDef(num_statements > 20)

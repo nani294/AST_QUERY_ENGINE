@@ -1,0 +1,2 @@
+# Calls to exec()
+Call(func.name == "exec")

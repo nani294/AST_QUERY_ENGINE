@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AST Query Engine</title>
+<style>
+  :root {
+    --bg:#f4f6fa; --panel:#ffffff; --text:#1c2333; --muted:#667085; --border:#d8dde8;
+    --accent:#3355d6; --accent-text:#ffffff; --ok:#11743f; --okbg:#e2f5ea;
+    --bad:#b3261e; --badbg:#fdeceb; --hit:#fff4c7; --mark:#ffd34d; --code-bg:#fbfcfd;
+    --chip:#eef1f8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:#11141b; --panel:#1a1e28; --text:#e5e8f0; --muted:#98a2b3; --border:#2c3242;
+      --accent:#8aa0ff; --accent-text:#0d1120; --ok:#62d69c; --okbg:#10301f;
+      --bad:#ff8f86; --badbg:#3a1815; --hit:#3b3516; --mark:#8c6e00; --code-bg:#151922;
+      --chip:#262c3b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  header { padding:18px 28px 6px; }
+  header h1 { margin:0; font-size:22px; }
+  header p { margin:2px 0 0; color:var(--muted); font-size:14px; }
+  main { padding:12px 28px 40px; max-width:1400px; margin:0 auto; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media (max-width:900px) { .grid { grid-template-columns:1fr; } }
+  .panel { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:14px; }
+  .panel h2 { margin:0 0 8px; font-size:15px; display:flex; align-items:center; gap:8px; }
+  .step { background:var(--accent); color:var(--accent-text); border-radius:50%;
+          width:22px; height:22px; display:inline-flex; align-items:center;
+          justify-content:center; font-size:12px; }
+  .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:8px; }
+  .filelabel { color:var(--muted); font-size:13px; }
+  button, select { font:inherit; font-size:14px; border:1px solid var(--border);
+          background:var(--panel); color:var(--text); border-radius:7px; padding:6px 11px; cursor:pointer; }
+  button:hover:not(:disabled), select:hover { border-color:var(--accent); }
+  button:disabled { opacity:.55; cursor:default; }
+  button.primary { background:var(--accent); color:var(--accent-text); border-color:var(--accent);
+          font-weight:600; padding:8px 20px; }
+  select { max-width:100%; }
+  input[type=file] { display:none; }
+  textarea { width:100%; height:260px; resize:vertical; background:var(--code-bg); color:var(--text);
+          border:1px solid var(--border); border-radius:8px; padding:10px; tab-size:4;
+          font:13px/1.5 ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace; }
+  textarea.small { height:130px; }
+  textarea:focus { outline:2px solid var(--accent); outline-offset:-1px; }
+  .dropzone.over textarea { outline:2px dashed var(--accent); }
+  .hint { color:var(--muted); font-size:12.5px; margin:4px 0 0; }
+  .runbar { display:flex; align-items:center; gap:12px; margin:16px 0 4px; }
+  .tabs { display:flex; gap:4px; border-bottom:1px solid var(--border); margin-top:10px; flex-wrap:wrap; }
+  .tab { border:1px solid transparent; border-bottom:none; border-radius:8px 8px 0 0; background:none;
+         padding:8px 14px; color:var(--muted); }
+  .tab.active { background:var(--panel); border-color:var(--border); color:var(--text); font-weight:600;
+         position:relative; top:1px; }
+  .tabpane { background:var(--panel); border:1px solid var(--border); border-top:none;
+         border-radius:0 0 10px 10px; padding:14px; min-height:120px; }
+  .hidden { display:none !important; }
+  .status { padding:9px 13px; border-radius:8px; margin-bottom:12px; font-size:14px; }
+  .status.ok { background:var(--okbg); color:var(--ok); }
+  .status.bad { background:var(--badbg); color:var(--bad); }
+  .status.info { background:var(--chip); color:var(--muted); }
+  .status code { font-family:ui-monospace,Consolas,monospace; }
+  pre { margin:0; font:13px/1.5 ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace; }
+  pre.block { background:var(--code-bg); border:1px solid var(--border); border-radius:8px;
+         padding:10px 12px; overflow:auto; max-height:380px; white-space:pre; }
+  .errbox { border:1px solid var(--bad); border-radius:8px; padding:12px; background:var(--badbg); margin-bottom:12px; }
+  .errbox h3 { margin:0 0 6px; color:var(--bad); font-size:15px; }
+  .errbox pre { white-space:pre-wrap; color:var(--text); }
+  .split { display:grid; grid-template-columns:minmax(260px,1fr) 1.6fr; gap:14px; }
+  @media (max-width:900px) { .split { grid-template-columns:1fr; } }
+  .cards { display:flex; flex-direction:column; gap:8px; max-height:470px; overflow:auto; padding-right:4px; }
+  .card { border:1px solid var(--border); border-radius:8px; padding:8px 10px; cursor:pointer; background:var(--panel); }
+  .card:hover { border-color:var(--accent); }
+  .card.sel { border-color:var(--accent); box-shadow:0 0 0 2px var(--accent) inset; }
+  .cardhead { display:flex; justify-content:space-between; gap:8px; align-items:center; margin-bottom:4px; }
+  .badge { background:var(--chip); border-radius:5px; padding:1px 8px; font-size:12px; font-weight:600; }
+  .loc { color:var(--muted); font-size:12.5px; }
+  .snip { white-space:pre-wrap; word-break:break-word; }
+  .chips { margin-top:5px; display:flex; flex-wrap:wrap; gap:5px; }
+  .chip { background:var(--chip); border-radius:5px; padding:1px 7px; font:12px ui-monospace,Consolas,monospace; }
+  .code { background:var(--code-bg); border:1px solid var(--border); border-radius:8px;
+          overflow:auto; max-height:470px; font:13px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace; }
+  .code .row { display:flex; margin:0; gap:0; flex-wrap:nowrap; align-items:stretch; }
+  .code .ln { flex:0 0 auto; width:3.4em; text-align:right; padding:0 10px 0 4px; color:var(--muted);
+          user-select:none; border-right:1px solid var(--border); }
+  .code .src { white-space:pre; padding:0 10px; flex:1 0 auto; }
+  .code .row.hit { background:var(--hit); }
+  .code .row.err { background:var(--badbg); }
+  .code mark { background:var(--mark); color:inherit; border-radius:3px; }
+  table { border-collapse:collapse; width:100%; }
+  th, td { text-align:left; padding:7px 9px; border-bottom:1px solid var(--border); vertical-align:top; font-size:14px; }
+  th { color:var(--muted); font-weight:600; font-size:13px; }
+  td.num { text-align:center; }
+  .count { display:inline-block; min-width:28px; text-align:center; border-radius:12px; padding:1px 8px; font-weight:700;
+           background:var(--chip); color:var(--muted); }
+  .count.pos { background:var(--okbg); color:var(--ok); }
+  .count.err { background:var(--badbg); color:var(--bad); }
+  details { margin-bottom:10px; }
+  summary { cursor:pointer; font-weight:600; margin-bottom:6px; }
+  .verdict { display:inline-block; padding:5px 16px; border-radius:8px; font-weight:700; font-size:16px; }
+  .verdict.pass { background:var(--okbg); color:var(--ok); }
+  .verdict.fail { background:var(--badbg); color:var(--bad); }
+  .stage { display:flex; gap:10px; padding:2px 0; }
+  .stage b { min-width:70px; }
+  .three { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+  @media (max-width:900px) { .three { grid-template-columns:1fr; } }
+  footer { text-align:center; color:var(--muted); font-size:12.5px; padding:6px 0 24px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>AST Query Engine</h1>
+  <p>Search code by its <em>structure</em>, not its text. Upload a Python file, write a query, see exactly which nodes match.</p>
+</header>
+
+<main>
+  <div class="grid">
+    <section class="panel">
+      <h2><span class="step">1</span> Source code (Python subset)</h2>
+      <div class="row">
+        <button id="srcPick">Upload .py file</button>
+        <input type="file" id="srcFile" accept=".py,.txt,text/plain">
+        <select id="exampleSel" title="Load a sample file"><option value="">Load an example...</option></select>
+        <span class="filelabel" id="srcName">sample1.py</span>
+      </div>
+      <div class="dropzone" id="srcDrop">
+        <textarea id="source" spellcheck="false" wrap="off" aria-label="Source code"></textarea>
+      </div>
+      <p class="hint">Upload, drag a file onto the box, or just type. The text is analyzed on this computer only.</p>
+    </section>
+
+    <section class="panel">
+      <h2><span class="step">2</span> Query</h2>
+      <div class="row">
+        <button id="qPick">Upload .query file</button>
+        <input type="file" id="qFile" accept=".query,.txt,text/plain">
+        <select id="librarySel" title="Fill in a ready-made query"><option value="">Ready-made queries...</option></select>
+      </div>
+      <div class="dropzone" id="qDrop">
+        <textarea id="query" spellcheck="false" wrap="off" aria-label="Query"></textarea>
+      </div>
+      <p class="hint">Example: <code>Call(func.name == "open") AND NOT ancestor(With)</code> &middot; Lines starting with # are comments.</p>
+    </section>
+  </div>
+
+  <div class="runbar">
+    <button class="primary" id="runBtn">Run query</button>
+    <span class="hint" id="runHint">or press Ctrl + Enter</span>
+  </div>
+
+  <div class="tabs" role="tablist">
+    <button class="tab active" data-tab="results">Results</button>
+    <button class="tab" data-tab="library">Scan with all ready-made queries</button>
+    <button class="tab" data-tab="pipeline">Compiler stages</button>
+    <button class="tab" data-tab="testcase">Test case</button>
+  </div>
+
+  <div class="tabpane" id="pane-results">
+    <div class="status info">Press <b>Run query</b> to see the matches here.</div>
+  </div>
+
+  <div class="tabpane hidden" id="pane-library">
+    <div class="row">
+      <button id="scanBtn">Scan the source with every ready-made query</button>
+      <span class="hint">Runs all the .query files from the queries/ folder on the source above.</span>
+    </div>
+    <div id="libraryOut"></div>
+  </div>
+
+  <div class="tabpane hidden" id="pane-pipeline">
+    <div class="row">
+      <button id="inspectBtn">Show the output of each compiler stage</button>
+      <span class="hint">Tokens, AST and Query AST for the inputs above.</span>
+    </div>
+    <div id="pipelineOut"></div>
+  </div>
+
+  <div class="tabpane hidden" id="pane-testcase">
+    <p class="hint" style="margin-top:0">A test case is three files: the source (<code>input.py</code>), the query
+      (<code>query.query</code>) and the answer you expect (<code>expected.json</code>).</p>
+    <div class="row">
+      <button id="tcCopy">Copy from the boxes above</button>
+      <button id="tcRun" class="primary">Run test case</button>
+    </div>
+    <div class="three">
+      <div>
+        <div class="row"><b>input.py</b><button data-pick="tcInput">Upload</button></div>
+        <textarea id="tcInput" class="small" spellcheck="false" wrap="off"></textarea>
+      </div>
+      <div>
+        <div class="row"><b>query.query</b><button data-pick="tcQuery">Upload</button></div>
+        <textarea id="tcQuery" class="small" spellcheck="false" wrap="off"></textarea>
+      </div>
+      <div>
+        <div class="row"><b>expected.json</b><button data-pick="tcExpected">Upload</button></div>
+        <textarea id="tcExpected" class="small" spellcheck="false" wrap="off">{
+    "expected_matches": 1
+}</textarea>
+      </div>
+    </div>
+    <input type="file" id="tcFile">
+    <div id="caseOut" style="margin-top:14px"></div>
+  </div>
+</main>
+
+<footer>Everything runs locally: lexer &rarr; parser &rarr; AST &rarr; query &rarr; semantic check &rarr; evaluator.</footer>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+
+/* Build DOM safely: text always goes through text nodes, never innerHTML. */
+function h(tag, props, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(props || {})) {
+    if (v === false || v == null) continue;
+    if (k === "class") e.className = v;
+    else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+    else e.setAttribute(k, v);
+  }
+  for (const kid of kids.flat()) {
+    if (kid == null || kid === false) continue;
+    e.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+  }
+  return e;
+}
+function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
+
+async function post(path, body) {
+  try {
+    const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify(body) });
+    return await r.json();
+  } catch (err) {
+    return { ok: false, stage: "internal", where: "source", line: null,
+             message: "Cannot reach the server. Is `python server.py` still running?" };
+  }
+}
+
+const STAGE_TITLE = { source: "Source code error", query: "Query syntax error",
+                      semantic: "Semantic error", input: "Input error", internal: "Internal error" };
+const state = { filename: "sample1.py", last: null, selected: null, pipelineFor: null };
+
+/* ------------------------------------------------------------ file input */
+function readInto(file, textarea, onDone) {
+  const reader = new FileReader();
+  reader.onload = () => { textarea.value = String(reader.result).replace(/^\uFEFF/, ""); if (onDone) onDone(file); };
+  reader.onerror = () => alert("Could not read " + file.name);
+  reader.readAsText(file);
+}
+function wireUpload(buttonId, inputId, textarea, onDone) {
+  const input = $(inputId);
+  $(buttonId).addEventListener("click", () => { input.value = ""; input.click(); });
+  input.addEventListener("change", () => { if (input.files[0]) readInto(input.files[0], textarea, onDone); });
+}
+function wireDrop(zoneId, textarea, onDone) {
+  const zone = $(zoneId);
+  zone.addEventListener("dragover", (e) => { e.preventDefault(); zone.classList.add("over"); });
+  zone.addEventListener("dragleave", () => zone.classList.remove("over"));
+  zone.addEventListener("drop", (e) => {
+    e.preventDefault(); zone.classList.remove("over");
+    const f = e.dataTransfer.files[0];
+    if (f) readInto(f, textarea, onDone);
+  });
+}
+wireUpload("srcPick", "srcFile", $("source"), (f) => { state.filename = f.name; $("srcName").textContent = f.name; });
+wireDrop("srcDrop", $("source"), (f) => { state.filename = f.name; $("srcName").textContent = f.name; });
+wireUpload("qPick", "qFile", $("query"), null);
+wireDrop("qDrop", $("query"), null);
+
+/* test-case uploaders share one hidden file input */
+let tcTarget = null;
+document.querySelectorAll("[data-pick]").forEach((b) => b.addEventListener("click", () => {
+  tcTarget = $(b.dataset.pick); $("tcFile").value = ""; $("tcFile").click();
+}));
+$("tcFile").addEventListener("change", () => {
+  const f = $("tcFile").files[0];
+  if (f && tcTarget) readInto(f, tcTarget, null);
+});
+
+/* --------------------------------------------------------------- tabs */
+function showTab(name) {
+  document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
+  document.querySelectorAll(".tabpane").forEach((p) => p.classList.toggle("hidden", p.id !== "pane-" + name));
+}
+document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => showTab(t.dataset.tab)));
+
+/* ------------------------------------------------------- code rendering */
+function codeView(source, matches, selIdx, errLine) {
+  const lines = source.replace(/\r\n?/g, "\n").split("\n");
+  const hit = new Set();
+  matches.forEach((m) => { for (let l = m.line; l <= m.end_line; l++) hit.add(l); });
+  const sel = selIdx != null ? matches[selIdx] : null;
+  const box = h("div", { class: "code" });
+  let focus = null;
+  lines.forEach((text, i) => {
+    const n = i + 1;
+    const cls = ["row"];
+    if (hit.has(n)) cls.push("hit");
+    if (errLine === n) cls.push("err");
+    const src = h("span", { class: "src" });
+    if (sel && n >= sel.line && n <= sel.end_line) {
+      const s = n === sel.line ? sel.column - 1 : 0;
+      const e = n === sel.end_line ? sel.end_column - 1 : text.length;
+      const mk = h("mark", {}, text.slice(s, e) || " ");
+      src.append(text.slice(0, s), mk, text.slice(e));
+      if (n === sel.line) focus = mk;
+    } else {
+      src.textContent = text.length ? text : " ";
+    }
+    box.append(h("div", { class: cls.join(" ") }, h("span", { class: "ln" }, n), src));
+    if (errLine === n && !focus) focus = box.lastChild;
+  });
+  return { box, focus };
+}
+function firstLine(s) {
+  const parts = s.split("\n");
+  return parts[0] + (parts.length > 1 ? "  ..." : "");
+}
+function bindingChips(b) {
+  const keys = Object.keys(b || {});
+  if (!keys.length) return null;
+  return h("div", { class: "chips" }, keys.map((k) => h("span", { class: "chip" }, k + " = " + JSON.stringify(b[k]))));
+}
+
+/* ---------------------------------------------------------------- run */
+function errorBox(resp) {
+  const parts = [h("h3", {}, STAGE_TITLE[resp.stage] || "Error"), h("pre", {}, resp.message)];
+  if (resp.stage === "semantic" && resp.issues && resp.issues.length > 1)
+    parts.push(h("p", { class: "hint" }, resp.issues.length + " problems were found; all are listed above."));
+  return h("div", { class: "errbox" }, parts);
+}
+
+function renderResults(resp, source) {
+  const pane = $("pane-results");
+  clear(pane);
+  state.last = resp;
+  state.selected = null;
+  if (!resp.ok) {
+    pane.append(errorBox(resp));
+    if (resp.where === "source" && resp.line) {
+      pane.append(h("p", { class: "hint" }, "The problem is on line " + resp.line + " of the source:"));
+      const { box, focus } = codeView(source, [], null, resp.line);
+      pane.append(box);
+      if (focus) focus.scrollIntoView({ block: "nearest" });
+    } else if (resp.where === "query" && resp.line) {
+      pane.append(h("p", { class: "hint" }, "The problem is on line " + resp.line + ", column " + (resp.column || 1) + " of the query."));
+    }
+    return;
+  }
+  const n = resp.count;
+  const status = h("div", { class: "status " + (n ? "ok" : "info") },
+    h("b", {}, n + (n === 1 ? " match" : " matches")), " in " + resp.file + " \u00b7 " + resp.elapsed_ms + " ms \u00b7 query: ",
+    h("code", {}, resp.query));
+  pane.append(status);
+  if (!n) { pane.append(h("p", { class: "hint" }, "Nothing in this file matches the query. Try the \"Scan with all ready-made queries\" tab to see what does.")); return; }
+
+  const tools = h("div", { class: "row" },
+    h("button", { onclick: () => downloadJson(resp) }, "Download JSON"),
+    h("button", { onclick: (ev) => copyJson(resp, ev.target) }, "Copy JSON"));
+  pane.append(tools);
+
+  const list = h("div", { class: "cards" });
+  const codeHolder = h("div");
+  const LIMIT = 300;
+  resp.matches.slice(0, LIMIT).forEach((m, i) => {
+    list.append(h("div", { class: "card", "data-i": i, onclick: () => select(i) },
+      h("div", { class: "cardhead" }, h("span", { class: "badge" }, m.node_type),
+        h("span", { class: "loc" }, "line " + m.line + ", col " + m.column)),
+      h("pre", { class: "snip" }, firstLine(m.snippet)), bindingChips(m.bindings)));
+  });
+  if (n > LIMIT) list.append(h("p", { class: "hint" }, "Showing the first " + LIMIT + " of " + n + " matches."));
+  pane.append(h("div", { class: "split" }, list, codeHolder));
+
+  function select(i) {
+    state.selected = i;
+    list.querySelectorAll(".card").forEach((c) => c.classList.toggle("sel", Number(c.dataset.i) === i));
+    clear(codeHolder);
+    const { box, focus } = codeView(source, resp.matches, i, null);
+    codeHolder.append(box);
+    if (focus) focus.scrollIntoView({ block: "nearest" });
+  }
+  select(0);
+}
+
+async function run() {
+  const source = $("source").value, query = $("query").value;
+  const btn = $("runBtn");
+  btn.disabled = true; btn.textContent = "Running...";
+  showTab("results");
+  const resp = await post("/api/run", { source, query, filename: state.filename });
+  btn.disabled = false; btn.textContent = "Run query";
+  renderResults(resp, source);
+}
+$("runBtn").addEventListener("click", run);
+["source", "query"].forEach((id) => $(id).addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); run(); }
+}));
+
+function downloadJson(resp) {
+  const data = { query: resp.query, file: resp.file, matches: resp.matches };
+  const blob = new Blob([JSON.stringify(data, null, 4)], { type: "application/json" });
+  const a = h("a", { href: URL.createObjectURL(blob), download: "matches.json" });
+  document.body.append(a); a.click(); a.remove();
+}
+function copyJson(resp, button) {
+  const data = { query: resp.query, file: resp.file, matches: resp.matches };
+  const done = () => { const old = button.textContent; button.textContent = "Copied!"; setTimeout(() => (button.textContent = old), 1200); };
+  if (navigator.clipboard) navigator.clipboard.writeText(JSON.stringify(data, null, 4)).then(done, () => alert("Copy failed"));
+  else alert("Copy is not available in this browser; use Download JSON.");
+}
+
+/* ------------------------------------------------------------ library */
+$("scanBtn").addEventListener("click", async () => {
+  const out = $("libraryOut"); clear(out);
+  out.append(h("p", { class: "hint" }, "Scanning..."));
+  const source = $("source").value;
+  const resp = await post("/api/library", { source, filename: state.filename });
+  clear(out);
+  if (!resp.ok) { out.append(errorBox(resp)); return; }
+  const rows = resp.rows.map((r) => {
+    const cnt = r.error ? h("span", { class: "count err" }, "error")
+      : h("span", { class: "count" + (r.count ? " pos" : "") }, r.count);
+    const lines = r.lines && r.lines.length ? "lines " + r.lines.join(", ") : "";
+    return h("tr", {},
+      h("td", {}, h("b", {}, r.name), h("div", { class: "hint" }, r.description)),
+      h("td", { class: "num" }, cnt),
+      h("td", { class: "hint" }, r.error ? r.error.split("\n")[1] || "error" : lines),
+      h("td", {}, h("button", { onclick: () => { $("query").value = r.query; run(); } }, "Show matches")));
+  });
+  out.append(h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, "Query"), h("th", {}, "Matches"), h("th", {}, "Where"), h("th", {}, ""))),
+    h("tbody", {}, rows)));
+});
+
+/* ----------------------------------------------------------- pipeline */
+function section(title, text, open) {
+  return h("details", open ? { open: "open" } : {}, h("summary", {}, title),
+    h("pre", { class: "block" }, text == null || text === "" ? "(nothing to show)" : text));
+}
+$("inspectBtn").addEventListener("click", async () => {
+  const out = $("pipelineOut"); clear(out);
+  out.append(h("p", { class: "hint" }, "Working..."));
+  const resp = await post("/api/inspect", { source: $("source").value, query: $("query").value });
+  clear(out);
+  if (!resp.ok) { out.append(errorBox(resp)); return; }
+  out.append(h("h3", {}, "Source language"));
+  out.append(section("1. Raw tokens (SLY lexer)", resp.raw_tokens, false));
+  out.append(section("2. Tokens after indentation handling (INDENT / DEDENT added)", resp.tokens, true));
+  out.append(section("3. Custom AST (SLY parser)", resp.ast, true));
+  if (resp.source_error) out.append(h("div", { class: "errbox" }, h("h3", {}, "Source error"), h("pre", {}, resp.source_error)));
+  out.append(h("h3", {}, "Query language"));
+  out.append(section("4. Query tokens", resp.query_tokens, false));
+  out.append(section("5. Query AST" + (resp.canonical ? "  (canonical form: " + resp.canonical + ")" : ""), resp.query_ast, true));
+  if (resp.query_error) out.append(h("div", { class: "errbox" }, h("h3", {}, "Query error"), h("pre", {}, resp.query_error)));
+  if (resp.semantic_error) out.append(h("div", { class: "errbox" }, h("h3", {}, "Semantic error"), h("pre", {}, resp.semantic_error)));
+  if (resp.query_ast && !resp.query_error && !resp.semantic_error)
+    out.append(h("div", { class: "status ok" }, "Semantic analysis passed: the query is valid."));
+});
+
+/* ---------------------------------------------------------- test case */
+$("tcCopy").addEventListener("click", () => { $("tcInput").value = $("source").value; $("tcQuery").value = $("query").value; });
+$("tcRun").addEventListener("click", async () => {
+  const out = $("caseOut"); clear(out);
+  const resp = await post("/api/case", { input: $("tcInput").value, query: $("tcQuery").value, expected: $("tcExpected").value });
+  if (!resp.ok) { out.append(errorBox(resp)); return; }
+  out.append(h("div", {}, h("span", { class: "verdict " + (resp.passed ? "pass" : "fail") }, resp.passed ? "TEST PASSED" : "TEST FAILED")));
+  out.append(h("div", { style: "margin:12px 0" }, resp.stages.map((s) =>
+    h("div", { class: "stage" }, h("b", {}, s.status), h("span", {}, s.name)))));
+  if (resp.expected != null)
+    out.append(h("p", {}, "Expected matches: ", h("b", {}, resp.expected), "   Actual matches: ", h("b", {}, resp.actual)));
+  if (resp.messages && resp.messages.length) out.append(h("pre", { class: "block" }, resp.messages.join("\n")));
+});
+
+/* --------------------------------------------------------- start-up */
+async function init() {
+  $("source").value = "def process(filename):\n    f = open(filename)\n\n    for item in items:\n        for x in item:\n            print(x)\n\n    eval(user_input)\n\n    try:\n        risky()\n    except:\n        pass\n\n    return f\n";
+  $("query").value = 'Call(func.name == "open") AND NOT ancestor(With)';
+  try {
+    const q = await (await fetch("/api/queries")).json();
+    q.queries.forEach((r) => $("librarySel").append(h("option", { value: r.query, title: r.description }, r.name + (r.description ? "  -  " + r.description : ""))));
+    const ex = await (await fetch("/api/examples")).json();
+    ex.examples.forEach((r) => $("exampleSel").append(h("option", { value: r.name }, r.name)));
+    $("exampleSel").addEventListener("change", () => {
+      const pick = ex.examples.find((r) => r.name === $("exampleSel").value);
+      if (pick) { $("source").value = pick.source; state.filename = pick.name; $("srcName").textContent = pick.name; }
+      $("exampleSel").value = "";
+    });
+    $("librarySel").addEventListener("change", () => {
+      if ($("librarySel").value) $("query").value = $("librarySel").value;
+      $("librarySel").selectedIndex = 0;
+    });
+  } catch (err) {
+    $("pane-results").prepend(h("div", { class: "status bad" }, "Cannot reach the server. Start it with: python server.py"));
+  }
+}
+init();
+</script>
+</body>
+</html>
